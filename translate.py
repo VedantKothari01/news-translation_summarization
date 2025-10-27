@@ -1,14 +1,14 @@
-import torch
+import requests
 import os
-from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
-import warnings
-warnings.filterwarnings('ignore')
+from tenacity import retry, stop_after_attempt, wait_exponential
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class TranslationPipeline:
     def __init__(self):
-        self.model_name = "facebook/mbart-large-50-many-to-many-mmt"
-        self.model = None
-        self.tokenizer = None
+        self.api_key = os.getenv('HUGGINGFACE_API_KEY', '')
+        self.base_url = "https://api-inference.huggingface.co/models"
         
         self.lang_codes = {
             'en': 'en_XX', 'hi': 'hi_IN', 'es': 'es_XX', 'fr': 'fr_XX',
@@ -17,46 +17,68 @@ class TranslationPipeline:
             'mr': 'mr_IN', 'gu': 'gu_IN', 'bn': 'bn_IN'
         }
     
-    def translate(self, text, source_lang, target_lang, max_length=512):
+    def translate(self, text, source_lang, target_lang, max_length=1024):
         if source_lang == target_lang:
             return text
         
-        if self.model is None:
-            self._load_model()
+        if not self.api_key:
+            return f"[Translation unavailable - HF_API_KEY not set] {text[:100]}"
         
         src_code = self.lang_codes.get(source_lang, 'en_XX')
         tgt_code = self.lang_codes.get(target_lang, 'en_XX')
         
-        self.tokenizer.src_lang = src_code
+        model_name = f"Helsinki-NLP/opus-mt-{src_code.replace('_', '-')}-{tgt_code.replace('_', '-')}"
         
-        # Don't truncate - translate full text
-        encoded = self.tokenizer(
-            text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=1024
-        ).to(self.device)
+        try:
+            result = self._translate_with_api(text, model_name)
+            if result:
+                return result
+        except:
+            pass
         
-        with torch.no_grad():
-            generated = self.model.generate(
-                **encoded,
-                forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_code],
-                num_beams=2,
-                max_length=max_length,
-                early_stopping=True,
-                no_repeat_ngram_size=2,
-                do_sample=False
-            )
-        
-        result = self.tokenizer.batch_decode(generated, skip_special_tokens=True)[0]
-        return result
+        fallback_model = "facebook/mbart-large-50-many-to-many-mmt"
+        try:
+            return self._translate_mbart(text, src_code, tgt_code)
+        except Exception as e:
+            return f"[Translation failed: {e}] {text[:100]}"
     
-    def _load_model(self):
-        print("Loading mBART-50 model...")
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.tokenizer = MBart50TokenizerFast.from_pretrained(self.model_name)
-        self.model = MBartForConditionalGeneration.from_pretrained(self.model_name)
-        self.model.to(self.device)
-        self.model.eval()
-        print("Model loaded")
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def _translate_with_api(self, text, model_name):
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        
+        response = requests.post(
+            f"{self.base_url}/{model_name}",
+            json={"inputs": text[:1000]},
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list) and result:
+                return result[0].get('translation_text', '')
+            elif isinstance(result, dict):
+                return result.get('generated_text', '')
+        
+        response.raise_for_status()
+        return None
+    
+    def _translate_mbart(self, text, src_code, tgt_code):
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        
+        formatted_text = f"{src_code} {text[:1000]}"
+        
+        response = requests.post(
+            f"{self.base_url}/facebook/mbart-large-50-many-to-many-mmt",
+            json={"inputs": formatted_text},
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list) and result:
+                translated = result[0].get('generated_text', '')
+                return translated.replace(tgt_code, '').strip()
+        
+        raise Exception(f"mBART translation failed: {response.status_code}")

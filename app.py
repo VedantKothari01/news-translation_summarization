@@ -11,11 +11,12 @@ from language_detector import detect_language
 
 st.set_page_config(
     page_title="News Hub",
-    page_icon="🌍",
+    page_icon="🌐",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Initialize session state
 if 'articles' not in st.session_state:
     st.session_state.articles = []
 if 'current_idx' not in st.session_state:
@@ -31,12 +32,15 @@ if 'auto_fetched' not in st.session_state:
 if 'target_lang' not in st.session_state:
     st.session_state.target_lang = 'hi'
 
+# Load models once
 if st.session_state.translator is None:
-    st.session_state.translator = TranslationPipeline()
+    with st.spinner("Loading translation model..."):
+        st.session_state.translator = TranslationPipeline()
 if st.session_state.summarizer is None:
-    st.session_state.summarizer = SummarizationPipeline()
+    with st.spinner("Loading summarization model..."):
+        st.session_state.summarizer = SummarizationPipeline()
 
-st.title("🌍 Multilingual News Hub")
+st.title("🌐 Multilingual News Hub")
 st.caption("AI-Powered Translation & Summarization | Real-Time News")
 
 st.markdown("---")
@@ -56,11 +60,14 @@ with st.sidebar:
         index=1
     )
     
-    # Update target lang if changed (don't clear cache)
+    # Only clear cache when language actually changes
     if target_lang != st.session_state.target_lang:
         st.session_state.target_lang = target_lang
-        # Only clear if we actually changed language
-        st.session_state.processed_articles = {k: v for k, v in st.session_state.processed_articles.items() if k.endswith(f'_{target_lang}')}
+        # Keep cache for current language only
+        st.session_state.processed_articles = {
+            k: v for k, v in st.session_state.processed_articles.items() 
+            if k.endswith(f'_{target_lang}')
+        }
     
     st.markdown("---")
     
@@ -71,9 +78,10 @@ with st.sidebar:
         st.session_state.processed_articles = {}
     
     st.markdown("---")
-    st.markdown("**Translation:** mBART-50")
-    st.markdown("**Summarization:** BART-Large-CNN")
+    st.markdown("**Translation:** mBART-50 (610M params)")
+    st.markdown("**Summarization:** BART-CNN (406M params)")
 
+# Auto-fetch latest news on first load
 if not st.session_state.auto_fetched and len(st.session_state.articles) == 0:
     with st.spinner("Fetching latest trending news..."):
         try:
@@ -90,6 +98,7 @@ if not st.session_state.auto_fetched and len(st.session_state.articles) == 0:
 if st.session_state.articles:
     article = st.session_state.articles[st.session_state.current_idx]
     
+    # Navigation buttons
     col1, col2, col3 = st.columns([2, 3, 2])
     
     with col1:
@@ -107,48 +116,57 @@ if st.session_state.articles:
     
     st.markdown("---")
     
-    # Use a more specific cache key
-    cache_key = f"{article['title'][:50]}_{target_lang}"
+    # Create unique cache key using article title + language
+    cache_key = f"{article['title'][:100]}_{target_lang}"
     
-    # Check cache FIRST before showing spinner
+    # Check if already processed
     if cache_key in st.session_state.processed_articles:
         processed = st.session_state.processed_articles[cache_key]
     else:
+        # Process the article
         with st.spinner("Translating and summarizing..."):
             try:
                 source_lang = detect_language(article['title'])
                 
                 article_content = article.get('content', article.get('description', 'No content'))
                 
-                translated_title = st.session_state.translator.translate(
-                    article['title'],
-                    source_lang,
-                    target_lang
-                )
-                
-                # Translate full content with longer max_length for expander
-                translated_content = st.session_state.translator.translate(
-                    article_content,
-                    source_lang,
-                    target_lang,
-                    max_length=1024
-                )
-                
-                summary = st.session_state.summarizer.summarize(
-                    article_content,
-                    max_length=150,
-                    min_length=60,
-                    num_beams=4
-                )
-                
-                if summary and len(summary) > 20:
-                    summary_translated = st.session_state.translator.translate(
-                        summary,
-                        'en',
+                # Translate title
+                try:
+                    translated_title = st.session_state.translator.translate(
+                        article['title'],
+                        source_lang,
                         target_lang
                     )
-                else:
-                    summary_translated = translated_content[:300]
+                except:
+                    translated_title = article['title']
+                
+                try:
+                    translated_content = st.session_state.translator.translate(
+                        article_content,
+                        source_lang,
+                        target_lang,
+                        max_length=1024
+                    )
+                except:
+                    translated_content = article_content
+                
+                try:
+                    summary_english = st.session_state.summarizer.summarize(
+                        article_content,
+                        max_length=200,
+                        min_length=50
+                    )
+                    
+                    if target_lang != 'en' and summary_english and len(summary_english) > 20:
+                        summary_translated = st.session_state.translator.translate(
+                            summary_english,
+                            'en',
+                            target_lang
+                        )
+                    else:
+                        summary_translated = summary_english or article_content[:200]
+                except:
+                    summary_translated = translated_content[:200]
                 
                 processed = {
                     'title': translated_title,
@@ -157,7 +175,9 @@ if st.session_state.articles:
                     'source_lang': source_lang
                 }
                 
+                # Cache the result
                 st.session_state.processed_articles[cache_key] = processed
+                
             except Exception as e:
                 st.error(f"Processing error: {e}")
                 processed = {
@@ -167,9 +187,11 @@ if st.session_state.articles:
                     'source_lang': 'en'
                 }
     
+    # Display the article
     st.markdown(f"### {processed['title']}")
-    st.caption(f"📍 {article.get('source', 'Unknown')}  |  🕒 {article.get('published_at', '')[:10]}")
+    st.caption(f"📰 {article.get('source', 'Unknown')}  |  🕐 {article.get('published_at', '')[:10]}  |  🌍 {processed['source_lang'].upper()}")
     
+    # Display image if available
     image_url = article.get('image_url')
     if image_url:
         try:
@@ -179,15 +201,17 @@ if st.session_state.articles:
     
     st.markdown("---")
     
+    # Display summary
     st.markdown("#### Summary")
     st.write(processed['summary'])
     
     st.markdown("---")
     
+    # Full article in expander
     with st.expander("📖 Read Full Translated Article"):
         st.markdown(processed['content'])
         if article.get('url'):
-            st.markdown(f"[🔗 View Original Article in {source_lang.upper()}]({article['url']})")
+            st.markdown(f"[🔗 View Original Article]({article['url']})")
     
     st.markdown("---")
     

@@ -85,12 +85,14 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-4. Configure API key:
+4. Configure API keys:
 Create a `.env` file:
 ```
 NEWS_API_KEY=your_api_key_here
+HUGGINGFACE_API_KEY=your_hf_token_here
 ```
-Get your key from https://newsapi.org
+Get NewsAPI key from https://newsapi.org
+Get HF token from https://huggingface.co/settings/tokens
 
 5. Run application:
 ```bash
