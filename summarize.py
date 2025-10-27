@@ -13,9 +13,12 @@ class SummarizationPipeline:
         if self.model is None:
             self._load_model()
         
+        # Truncate to first 512 tokens for better results
+        text_clean = text[:3000]
+        
         inputs = self.tokenizer(
-            text,
-            max_length=1024,
+            text_clean,
+            max_length=512,
             truncation=True,
             return_tensors="pt"
         ).to(self.device)
@@ -27,7 +30,7 @@ class SummarizationPipeline:
                 max_length=max_length,
                 min_length=min_length,
                 num_beams=num_beams,
-                length_penalty=1.5,
+                length_penalty=2.0,
                 early_stopping=True,
                 no_repeat_ngram_size=3
             )

@@ -29,6 +29,10 @@ class TranslationPipeline:
         
         self.tokenizer.src_lang = src_code
         
+        # Truncate long text for faster processing
+        if len(text) > 800:
+            text = text[:800] + "..."
+        
         encoded = self.tokenizer(
             text,
             return_tensors="pt",
@@ -41,10 +45,10 @@ class TranslationPipeline:
             generated = self.model.generate(
                 **encoded,
                 forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_code],
-                num_beams=5,
-                max_length=max_length,
+                num_beams=3,
+                max_length=min(max_length, 200),
                 early_stopping=True,
-                no_repeat_ngram_size=3
+                no_repeat_ngram_size=2
             )
         
         result = self.tokenizer.batch_decode(generated, skip_special_tokens=True)[0]

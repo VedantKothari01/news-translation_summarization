@@ -28,6 +28,8 @@ if 'processed_articles' not in st.session_state:
     st.session_state.processed_articles = {}
 if 'auto_fetched' not in st.session_state:
     st.session_state.auto_fetched = False
+if 'target_lang' not in st.session_state:
+    st.session_state.target_lang = 'hi'
 
 if st.session_state.translator is None:
     st.session_state.translator = TranslationPipeline()
@@ -54,12 +56,8 @@ with st.sidebar:
         index=1
     )
     
-    news_category = st.selectbox(
-        "Category",
-        ['general', 'technology', 'business', 'science', 'health', 'sports', 'entertainment']
-    )
-    
-    num_articles = st.slider("Articles", 3, 10, 5)
+    if target_lang != st.session_state.target_lang:
+        st.session_state.target_lang = target_lang
     
     st.markdown("---")
     
@@ -67,13 +65,14 @@ with st.sidebar:
         st.session_state.auto_fetched = False
         st.session_state.articles = []
         st.session_state.current_idx = 0
+        st.session_state.processed_articles = {}
     
     st.markdown("---")
     st.markdown("**Translation:** mBART-50")
     st.markdown("**Summarization:** BART-Large-CNN")
 
 if not st.session_state.auto_fetched and len(st.session_state.articles) == 0:
-    with st.spinner("Fetching latest news..."):
+    with st.spinner("Fetching latest trending news..."):
         try:
             raw_articles = fetch_latest_news(category='general', count=5)
             if raw_articles:
@@ -110,7 +109,7 @@ if st.session_state.articles:
     if cache_key in st.session_state.processed_articles:
         processed = st.session_state.processed_articles[cache_key]
     else:
-        with st.spinner("Processing article..."):
+        with st.spinner("Translating and summarizing..."):
             try:
                 source_lang = detect_language(article['title'])
                 
@@ -128,17 +127,25 @@ if st.session_state.articles:
                     target_lang
                 )
                 
-                summary_text = article_content if source_lang == target_lang else translated_content
-                
                 summary = st.session_state.summarizer.summarize(
-                    summary_text,
-                    max_length=300,
-                    min_length=80
+                    article_content,
+                    max_length=150,
+                    min_length=60,
+                    num_beams=4
                 )
+                
+                if summary and len(summary) > 20:
+                    summary_translated = st.session_state.translator.translate(
+                        summary,
+                        'en',
+                        target_lang
+                    )
+                else:
+                    summary_translated = translated_content[:300]
                 
                 processed = {
                     'title': translated_title,
-                    'summary': summary,
+                    'summary': summary_translated,
                     'content': translated_content,
                     'source_lang': source_lang
                 }
@@ -148,13 +155,13 @@ if st.session_state.articles:
                 st.error(f"Processing error: {e}")
                 processed = {
                     'title': article['title'],
-                    'summary': article.get('content', article.get('description', ''))[:150],
+                    'summary': article.get('content', article.get('description', ''))[:200],
                     'content': article.get('content', article.get('description', '')),
                     'source_lang': 'en'
                 }
     
     st.markdown(f"### {processed['title']}")
-    st.caption(f"📍 {article.get('source', 'Unknown')}  |  🕒 {article.get('published_at', '')[:10]}  |  🌐 {processed['source_lang'].upper()}")
+    st.caption(f"📍 {article.get('source', 'Unknown')}  |  🕒 {article.get('published_at', '')[:10]}")
     
     image_url = article.get('image_url')
     if image_url:
@@ -170,10 +177,10 @@ if st.session_state.articles:
     
     st.markdown("---")
     
-    with st.expander("📖 Read Full Article"):
-        st.write(processed['content'])
+    with st.expander("📖 Read Full Translated Article"):
+        st.markdown(processed['content'])
         if article.get('url'):
-            st.markdown(f"[🔗 Original Article]({article['url']})")
+            st.markdown(f"[🔗 View Original Article in {source_lang.upper()}]({article['url']})")
     
     st.markdown("---")
     
