@@ -42,10 +42,11 @@ class TranslationPipeline:
             generated = self.model.generate(
                 **encoded,
                 forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_code],
-                num_beams=4,
+                num_beams=2,
                 max_length=max_length,
-                early_stopping=False,
-                no_repeat_ngram_size=2
+                early_stopping=True,
+                no_repeat_ngram_size=2,
+                do_sample=False
             )
         
         result = self.tokenizer.batch_decode(generated, skip_special_tokens=True)[0]

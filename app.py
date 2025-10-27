@@ -56,8 +56,11 @@ with st.sidebar:
         index=1
     )
     
+    # Update target lang if changed (don't clear cache)
     if target_lang != st.session_state.target_lang:
         st.session_state.target_lang = target_lang
+        # Only clear if we actually changed language
+        st.session_state.processed_articles = {k: v for k, v in st.session_state.processed_articles.items() if k.endswith(f'_{target_lang}')}
     
     st.markdown("---")
     
@@ -104,8 +107,10 @@ if st.session_state.articles:
     
     st.markdown("---")
     
-    cache_key = f"{st.session_state.current_idx}_{target_lang}"
+    # Use a more specific cache key
+    cache_key = f"{article['title'][:50]}_{target_lang}"
     
+    # Check cache FIRST before showing spinner
     if cache_key in st.session_state.processed_articles:
         processed = st.session_state.processed_articles[cache_key]
     else:
