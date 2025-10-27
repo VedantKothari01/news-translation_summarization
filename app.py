@@ -121,10 +121,12 @@ if st.session_state.articles:
                     target_lang
                 )
                 
+                # Translate full content with longer max_length for expander
                 translated_content = st.session_state.translator.translate(
                     article_content,
                     source_lang,
-                    target_lang
+                    target_lang,
+                    max_length=1024
                 )
                 
                 summary = st.session_state.summarizer.summarize(

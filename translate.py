@@ -29,25 +29,22 @@ class TranslationPipeline:
         
         self.tokenizer.src_lang = src_code
         
-        # Truncate long text for faster processing
-        if len(text) > 800:
-            text = text[:800] + "..."
-        
+        # Don't truncate - translate full text
         encoded = self.tokenizer(
             text,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=max_length
+            max_length=1024
         ).to(self.device)
         
         with torch.no_grad():
             generated = self.model.generate(
                 **encoded,
                 forced_bos_token_id=self.tokenizer.lang_code_to_id[tgt_code],
-                num_beams=3,
-                max_length=min(max_length, 200),
-                early_stopping=True,
+                num_beams=4,
+                max_length=max_length,
+                early_stopping=False,
                 no_repeat_ngram_size=2
             )
         
